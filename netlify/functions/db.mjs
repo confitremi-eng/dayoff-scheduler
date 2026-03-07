@@ -15,6 +15,7 @@ const DEFAULTS = {
   employees: ["王小明","李美玲","張大偉","陳怡君","林志豪","黃淑芬","吳建宏","周雅婷","鄭宗翰","蔡佳穎"],
   leaves: {},
   specialIntent: {},
+  remarks: {},
 };
 
 const headers = {

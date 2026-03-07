@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { fetchAll, saveData } from "./api";
 
-const DB = { CONFIG: "config", LEAVES: "leaves", EMPLOYEES: "employees", SPECIAL: "specialIntent" };
+const DB = { CONFIG: "config", LEAVES: "leaves", EMPLOYEES: "employees", SPECIAL: "specialIntent", REMARKS: "remarks" };
 
 // ── helpers ──────────────────────────────────────────────────────────
 function getNextMonth() { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + 1, 1); }
@@ -49,6 +49,7 @@ export default function App(){
   const[employees,setEmployees]=useState(DEF_EMP);
   const[leaves,setLeaves]=useState({});
   const[specialIntent,setSpecialIntent]=useState({});
+  const[remarks,setRemarks]=useState({});
   const[currentUser,setCurrentUser]=useState("");
   const[toast,setToast]=useState(null);
   const[ready,setReady]=useState(false);
@@ -63,6 +64,7 @@ export default function App(){
       setEmployees(data.employees||DEF_EMP);
       setLeaves(data.leaves||{});
       setSpecialIntent(data.specialIntent||{});
+      setRemarks(data.remarks||{});
       setDbOk(true);
       if(init)setReady(true);
     }catch(e){
@@ -82,6 +84,7 @@ export default function App(){
   const updateEmployees=useCallback(async e=>{setEmployees(e);await saveData(DB.EMPLOYEES,e)},[]);
   const updateLeaves=useCallback(async l=>{setLeaves(l);await saveData(DB.LEAVES,l)},[]);
   const updateSpecialIntent=useCallback(async s=>{setSpecialIntent(s);await saveData(DB.SPECIAL,s)},[]);
+  const updateRemarks=useCallback(async r=>{setRemarks(r);await saveData(DB.REMARKS,r)},[]);
 
   const nextMonth=getNextMonth();
   const year=nextMonth.getFullYear(),month=nextMonth.getMonth(),days=daysInMonth(year,month);
@@ -160,8 +163,8 @@ export default function App(){
       </div>
 
       <div style={{maxWidth:960,margin:"0 auto"}}>
-        {tab==="calendar"&&<CalendarView {...{year,month,days,dayCount,config,employees,currentUser,setCurrentUser,userLeaves,toggleDay,exportCSV,leaves,specialIntent,updateSpecialIntent}}/>}
-        {tab==="records"&&<RecordsView {...{employees,leaves,year,month,days,config,specialIntent}}/>}
+        {tab==="calendar"&&<CalendarView {...{year,month,days,dayCount,config,employees,currentUser,setCurrentUser,userLeaves,toggleDay,exportCSV,leaves,specialIntent,updateSpecialIntent,remarks,updateRemarks}}/>}
+        {tab==="records"&&<RecordsView {...{employees,leaves,year,month,days,config,specialIntent,remarks}}/>}
         {tab==="admin"&&<AdminView {...{config,updateConfig,employees,updateEmployees,leaves,updateLeaves,notify,year,month}}/>}
       </div>
     </div>
@@ -171,13 +174,19 @@ export default function App(){
 // ══════════════════════════════════════════════════════════════════════
 //  CALENDAR VIEW
 // ══════════════════════════════════════════════════════════════════════
-function CalendarView({year,month,days,dayCount,config,employees,currentUser,setCurrentUser,userLeaves,toggleDay,exportCSV,leaves,specialIntent,updateSpecialIntent}){
+function CalendarView({year,month,days,dayCount,config,employees,currentUser,setCurrentUser,userLeaves,toggleDay,exportCSV,leaves,specialIntent,updateSpecialIntent,remarks,updateRemarks}){
   const firstDay=new Date(year,month,1).getDay();
   const whoOn=day=>{const ds=fmt(new Date(year,month,day));return employees.filter(e=>(leaves[e]||[]).includes(ds))};
 
   const userHolidayCount=useMemo(()=>userLeaves.filter(d=>{const dt=new Date(d+"T00:00:00");const t=dayType(dt.getFullYear(),dt.getMonth(),dt.getDate());return t==="weekend"||t==="holiday"}).length,[userLeaves]);
 
   const uSpecial=specialIntent[currentUser]||0;
+
+  const remarkTimerRef=useRef(null);
+  const[localRemark,setLocalRemark]=useState(remarks[currentUser]||"");
+  const prevUser=useRef(currentUser);
+  useEffect(()=>{if(prevUser.current!==currentUser){setLocalRemark(remarks[currentUser]||"");prevUser.current=currentUser}},[currentUser,remarks]);
+  const onRemarkChange=val=>{setLocalRemark(val);clearTimeout(remarkTimerRef.current);remarkTimerRef.current=setTimeout(()=>updateRemarks({...remarks,[currentUser]:val}),600)};
 
   return(
     <div>
@@ -212,6 +221,12 @@ function CalendarView({year,month,days,dayCount,config,employees,currentUser,set
         </div>}
       </div>}
 
+      {/* 備註 */}
+      {currentUser&&<div style={{marginBottom:20,padding:"14px 18px",borderRadius:14,background:C.surface,border:`1px solid ${C.border}`}}>
+        <label style={{fontSize:14,fontWeight:600,color:C.textSub,display:"flex",alignItems:"center",gap:6,marginBottom:8}}>📝 備註</label>
+        <textarea value={localRemark} onChange={e=>onRemarkChange(e.target.value)} placeholder="輸入備註（例如：排休原因、特殊需求等）" rows={3} style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${C.border}`,background:C.card,color:C.text,fontSize:14,fontFamily:"inherit",outline:"none",resize:"vertical",transition:"border .2s",lineHeight:1.6}} onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.border}/>
+      </div>}
+
       <div style={{background:C.surface,borderRadius:20,border:`1px solid ${C.border}`,padding:20,overflow:"hidden"}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:8}}>
           {["日","一","二","三","四","五","六"].map((w,i)=><div key={w} style={{textAlign:"center",fontSize:13,fontWeight:600,color:i===0||i===6?C.orange+"cc":C.textDim,padding:"6px 0"}}>{w}</div>)}
@@ -242,22 +257,22 @@ function CalendarView({year,month,days,dayCount,config,employees,currentUser,set
 // ══════════════════════════════════════════════════════════════════════
 //  RECORDS VIEW
 // ══════════════════════════════════════════════════════════════════════
-function RecordsView({employees,leaves,year,month,days,config,specialIntent}){
+function RecordsView({employees,leaves,year,month,days,config,specialIntent,remarks}){
   const[filter,setFilter]=useState("");
   const data=useMemo(()=>employees.filter(e=>!filter||e.includes(filter)).map(emp=>{
     const el=(leaves[emp]||[]).filter(d=>{const dt=new Date(d+"T00:00:00");return dt.getFullYear()===year&&dt.getMonth()===month}).sort();
-    return{name:emp,leaves:el,spec:specialIntent[emp]||0};
-  }),[employees,leaves,year,month,filter,specialIntent]);
+    return{name:emp,leaves:el,spec:specialIntent[emp]||0,remark:remarks[emp]||""};
+  }),[employees,leaves,year,month,filter,specialIntent,remarks]);
 
   return(
     <div>
       <div style={{marginBottom:20,maxWidth:300}}><Input value={filter} onChange={setFilter} placeholder="🔍 搜尋同仁姓名..."/></div>
       <div style={{background:C.surface,borderRadius:20,border:`1px solid ${C.border}`,overflow:"hidden"}}>
-        <div style={{display:"grid",gridTemplateColumns:"120px 70px 70px 1fr",padding:"14px 20px",borderBottom:`1px solid ${C.border}`,fontSize:13,fontWeight:600,color:C.textDim}}>
-          <div>同仁</div><div style={{textAlign:"center"}}>排休</div><div style={{textAlign:"center"}}>特休</div><div>排休日期</div>
+        <div style={{display:"grid",gridTemplateColumns:"100px 60px 60px 1fr 140px",padding:"14px 20px",borderBottom:`1px solid ${C.border}`,fontSize:13,fontWeight:600,color:C.textDim}}>
+          <div>同仁</div><div style={{textAlign:"center"}}>排休</div><div style={{textAlign:"center"}}>特休</div><div>排休日期</div><div>備註</div>
         </div>
         {data.length===0&&<div style={{padding:40,textAlign:"center",color:C.textDim}}>無符合條件的紀錄</div>}
-        {data.map((row,idx)=><div key={row.name} style={{display:"grid",gridTemplateColumns:"120px 70px 70px 1fr",padding:"14px 20px",alignItems:"center",borderBottom:idx<data.length-1?`1px solid ${C.border}`:"none",transition:"background .15s"}} onMouseEnter={e=>e.currentTarget.style.background=C.card} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+        {data.map((row,idx)=><div key={row.name} style={{display:"grid",gridTemplateColumns:"100px 60px 60px 1fr 140px",padding:"14px 20px",alignItems:"center",borderBottom:idx<data.length-1?`1px solid ${C.border}`:"none",transition:"background .15s"}} onMouseEnter={e=>e.currentTarget.style.background=C.card} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
           <div style={{fontWeight:600,fontSize:14}}>{row.name}</div>
           <div style={{textAlign:"center"}}><Badge color={row.leaves.length>=config.maxPerMonth?C.danger:row.leaves.length>0?C.accent:C.textDim}>{row.leaves.length}/{config.maxPerMonth}</Badge></div>
           <div style={{textAlign:"center"}}>{row.spec>0?<Badge color="#22D3EE">{row.spec} 天</Badge>:<span style={{fontSize:12,color:C.textDim}}>—</span>}</div>
@@ -267,6 +282,7 @@ function RecordsView({employees,leaves,year,month,days,config,specialIntent}){
               return <span key={d} style={{padding:"3px 10px",borderRadius:8,background:`${tc2}18`,color:tc2,fontSize:12,fontWeight:500,fontFamily:"'JetBrains Mono',monospace"}}>{dt.getDate()}日{hN?` ${hN}`:`（${weekdayStr(dt.getFullYear(),dt.getMonth(),dt.getDate())}）`}</span>
             })}
           </div>
+          <div style={{fontSize:13,color:C.textSub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={row.remark}>{row.remark||<span style={{color:C.textDim}}>—</span>}</div>
         </div>)}
       </div>
     </div>
