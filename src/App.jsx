@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { fetchAll, saveData } from "./api";
+import { SCHEDULE_END, isWeekend, getHolidayName, isHoliday, dayType, DAY_LABELS } from "./holidays";
 
 const DB = { CONFIG: "config", LEAVES: "leaves", EMPLOYEES: "employees", SPECIAL: "specialIntent", CLOSED: "closedDays", BLOCKED: "blockedDays", SKIP: "skipLeave", PT_EMP: "partTimeEmployees", PT_SLOTS: "partTimeSlots" };
 
@@ -12,7 +13,7 @@ function getMonthOptions(){
   const opts=[];
   const now=new Date();
   let y=now.getFullYear(),m=now.getMonth();
-  while(y<2026||(y===2026&&m<=11)){
+  while(y<SCHEDULE_END.year||(y===SCHEDULE_END.year&&m<=SCHEDULE_END.month)){
     opts.push({value:`${y}-${String(m).padStart(2,"0")}`,label:`${y}年${m+1}月`});
     m++;if(m>11){m=0;y++}
   }
@@ -31,62 +32,11 @@ function fmt(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2
 function monthLabel(d) { return d.toLocaleDateString("zh-TW", { year: "numeric", month: "long" }); }
 function daysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
 function weekdayStr(y, m, d) { return ["日","一","二","三","四","五","六"][new Date(y,m,d).getDay()]; }
-function isWeekend(y, m, d) { const day = new Date(y,m,d).getDay(); return day === 0 || day === 6; }
+// isWeekend 已由 ./holidays.js 提供
 
-// ── Taiwan holidays 2026 (行政院人事行政總處公告，含補假，無補班) ──
-// 固定日期國定假日（每年相同）
-const H_FIXED = {
-  "01-01":"元旦",
-  "02-28":"和平紀念日",
-  "04-04":"兒童節",
-  "05-01":"勞動節",
-  "09-28":"教師節",
-  "10-10":"國慶日",
-  "10-25":"台灣光復節",
-  "12-25":"行憲紀念日",
-};
-// 農曆節日＋補假（每年不同）
-const H_YEAR = {
-  2025:{
-    "01-27":"除夕","01-28":"春節","01-29":"春節","01-30":"春節","01-31":"春節補假",
-    "04-03":"清明節補假","04-05":"清明節",
-    "05-30":"端午節","05-31":"端午節補假",
-    "09-29":"教師節補假",
-    "10-06":"中秋節",
-    "10-24":"光復節補假",
-  },
-  2026:{
-    // 春節連假 2/14(六)~2/22(日) 共9天
-    "02-15":"小年夜","02-16":"除夕","02-17":"春節初一","02-18":"春節初二","02-19":"春節初三","02-20":"小年夜補假",
-    // 228連假 2/27(五)~3/1(日) 共3天
-    "02-27":"和平紀念日補假",
-    // 清明連假 4/3(五)~4/6(一) 共4天
-    "04-03":"兒童節補假","04-05":"清明節","04-06":"清明節補假",
-    // 端午連假 6/19(五)~6/21(日) 共3天
-    "06-19":"端午節",
-    // 中秋+教師節連假 9/25(五)~9/28(一) 共4天
-    "09-25":"中秋節",
-    // 國慶連假 10/9(五)~10/11(日) 共3天
-    "10-09":"國慶日補假",
-    // 光復節連假 10/24(六)~10/26(一) 共3天
-    "10-26":"光復節補假",
-    // 行憲紀念日連假 12/25(五)~12/27(日) 共3天
-  },
-  2027:{
-    "02-05":"除夕","02-06":"春節初一","02-07":"春節初二","02-08":"春節初三","02-09":"春節補假",
-    "04-05":"清明節","04-03":"兒童節補假","04-06":"清明節補假",
-    "06-09":"端午節",
-    "09-27":"教師節補假",
-    "10-15":"中秋節",
-    "10-27":"光復節補假",
-  },
-};
-function getHolidayName(y,m,d){const k=`${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;return H_FIXED[k]||(H_YEAR[y]&&H_YEAR[y][k])||null;}
-function isHoliday(y,m,d){return !!getHolidayName(y,m,d);}
-function dayType(y,m,d){if(isHoliday(y,m,d))return"holiday";if(isWeekend(y,m,d))return"weekend";return"weekday";}
-const DAY_LABELS={holiday:"國定假日",weekend:"週末",weekday:"平日"};
+// 行事曆資料已移至 ./holidays.js（每年維護一次）
 
-const DEF_CONFIG={maxWeekday:2,maxWeekend:1,maxHoliday:1,maxPerMonth:5,maxHolidayMonth:2};
+const DEF_CONFIG={maxWeekday:2,maxWeekend:1,maxHoliday:1,maxPerMonth:5,maxHolidayMonth:2,openMonths:{}};
 const DEF_EMP=["王小明","李美玲","張大偉","陳怡君","林志豪","黃淑芬","吳建宏","周雅婷","鄭宗翰","蔡佳穎"];
 
 function getDayLimit(cfg,y,m,d){const t=dayType(y,m,d);if(t==="holiday")return cfg.maxHoliday;if(t==="weekend")return cfg.maxWeekend;return cfg.maxWeekday;}
@@ -182,10 +132,13 @@ export default function App(){
     return(leaves[currentUser]||[]).filter(d=>{const dt=new Date(d+"T00:00:00");return dt.getFullYear()===year&&dt.getMonth()===month});
   },[leaves,currentUser,year,month]);
 
+  const monthOpen=(config.openMonths||{})[`${year}-${month}`]===true;
+
   const notify=(msg,type="info")=>setToast({msg,type,key:Date.now()});
 
   const toggleDay=async(day)=>{
     if(!currentUser)return notify("請先選擇同仁","error");
+    if(!monthOpen)return notify("本月尚未開放排休，請洽管理員","error");
     const dateStr=fmt(new Date(year,month,day));
     if(closedDays.includes(dateStr))return notify("此日為公休日，無法排休","error");
     if(blockedDays.includes(dateStr))return notify("此日為禁止排休日，無法排休","error");
@@ -317,8 +270,8 @@ export default function App(){
       </div>}
 
       <div style={{maxWidth:960,margin:"0 auto"}}>
-        {tab==="calendar"&&role==="fulltime"&&<CalendarView {...{year,month,days,dayCount,config,employees,currentUser,setCurrentUser,userLeaves,toggleDay,exportCSV,leaves,specialIntent,updateSpecialIntent,closedDays,blockedDays,skipLeave,updateSkipLeave}}/>}
-        {tab==="calendar"&&role==="parttime"&&<PartTimeCalendarView {...{year,month,days,ptEmp,ptSlots,updatePtSlots,currentUser,setCurrentUser,notify,closedDays,exportPtCSV}}/>}
+        {tab==="calendar"&&role==="fulltime"&&<CalendarView {...{year,month,days,dayCount,config,employees,currentUser,setCurrentUser,userLeaves,toggleDay,exportCSV,leaves,specialIntent,updateSpecialIntent,closedDays,blockedDays,skipLeave,updateSkipLeave,monthOpen}}/>}
+        {tab==="calendar"&&role==="parttime"&&<PartTimeCalendarView {...{year,month,days,ptEmp,ptSlots,updatePtSlots,currentUser,setCurrentUser,notify,closedDays,exportPtCSV,monthOpen}}/>}
         {tab==="records"&&<RecordsView {...{employees,leaves,year,month,days,config,specialIntent,ptEmp,ptSlots,role}}/>}
         {tab==="admin"&&<AdminView {...{config,updateConfig,employees,updateEmployees,leaves,updateLeaves,notify,year,month,closedDays,updateClosedDays,blockedDays,updateBlockedDays,ptEmp,updatePtEmp,ptSlots,updatePtSlots,updateSpecialIntent,updateSkipLeave,showResetModal,setShowResetModal}}/>}
       </div>
@@ -329,7 +282,7 @@ export default function App(){
 // ══════════════════════════════════════════════════════════════════════
 //  CALENDAR VIEW
 // ══════════════════════════════════════════════════════════════════════
-function CalendarView({year,month,days,dayCount,config,employees,currentUser,setCurrentUser,userLeaves,toggleDay,exportCSV,leaves,specialIntent,updateSpecialIntent,closedDays,blockedDays,skipLeave,updateSkipLeave}){
+function CalendarView({year,month,days,dayCount,config,employees,currentUser,setCurrentUser,userLeaves,toggleDay,exportCSV,leaves,specialIntent,updateSpecialIntent,closedDays,blockedDays,skipLeave,updateSkipLeave,monthOpen}){
   const firstDay=new Date(year,month,1).getDay();
   const whoOn=day=>{const ds=fmt(new Date(year,month,day));return employees.filter(e=>(leaves[e]||[]).includes(ds))};
 
@@ -343,6 +296,10 @@ function CalendarView({year,month,days,dayCount,config,employees,currentUser,set
 
   return(
     <div>
+      {!monthOpen&&<div style={{marginBottom:16,padding:"14px 18px",borderRadius:14,background:C.dangerDim,border:`1px solid ${C.danger}40`,display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:20}}>🔒</span>
+        <div><div style={{fontSize:14,fontWeight:700,color:C.danger}}>本月尚未開放排休</div><div style={{fontSize:12,color:C.textSub,marginTop:2}}>管理員開放後才能填寫，目前僅供查看</div></div>
+      </div>}
       <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:16,alignItems:"center",justifyContent:"space-between"}}>
         <div style={{display:"flex",alignItems:"center",gap:12,flex:1,minWidth:240}}>
           <label style={{fontSize:14,fontWeight:600,color:C.textSub,whiteSpace:"nowrap"}}>選擇同仁</label>
@@ -425,7 +382,7 @@ function CalendarView({year,month,days,dayCount,config,employees,currentUser,set
 // ══════════════════════════════════════════════════════════════════════
 //  PART-TIME CALENDAR VIEW
 // ══════════════════════════════════════════════════════════════════════
-function PartTimeCalendarView({year,month,days,ptEmp,ptSlots,updatePtSlots,currentUser,setCurrentUser,notify,closedDays,exportPtCSV}){
+function PartTimeCalendarView({year,month,days,ptEmp,ptSlots,updatePtSlots,currentUser,setCurrentUser,notify,closedDays,exportPtCSV,monthOpen}){
   const firstDay=new Date(year,month,1).getDay();
   const[editingDay,setEditingDay]=useState(null); // 彈窗顯示中的日期
   useEffect(()=>{setEditingDay(null)},[year,month]); // 切換月份時關閉彈窗
@@ -454,6 +411,10 @@ function PartTimeCalendarView({year,month,days,ptEmp,ptSlots,updatePtSlots,curre
 
   return(
     <div>
+      {!monthOpen&&<div style={{marginBottom:16,padding:"14px 18px",borderRadius:14,background:C.dangerDim,border:`1px solid ${C.danger}40`,display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:20}}>🔒</span>
+        <div><div style={{fontSize:14,fontWeight:700,color:C.danger}}>本月尚未開放排班</div><div style={{fontSize:12,color:C.textSub,marginTop:2}}>管理員開放後才能填寫，目前僅供查看</div></div>
+      </div>}
       <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:16,alignItems:"center",justifyContent:"space-between"}}>
         <div style={{display:"flex",alignItems:"center",gap:12,flex:1,minWidth:240}}>
           <label style={{fontSize:14,fontWeight:600,color:C.textSub,whiteSpace:"nowrap"}}>選擇兼職同仁</label>
@@ -484,7 +445,7 @@ function PartTimeCalendarView({year,month,days,ptEmp,ptSlots,updatePtSlots,curre
             const slots=userSlots[ds]||[],hasSlot=slots.length>0;
             const bg=closed?"rgba(255,107,107,.06)":hasSlot?C.accentDim:C.card;
             const bd=closed?`1px solid ${C.danger}30`:hasSlot?`2px solid ${C.accent}`:`1px solid ${C.border}`;
-            return <div key={day} onClick={()=>{if(closed)return notify("此日為公休日","error");if(!currentUser)return notify("請先選擇同仁","error");setEditingDay(day)}} style={{
+            return <div key={day} onClick={()=>{if(!monthOpen)return notify("本月尚未開放排班，請洽管理員","error");if(closed)return notify("此日為公休日","error");if(!currentUser)return notify("請先選擇同仁","error");setEditingDay(day)}} style={{
               position:"relative",minHeight:68,borderRadius:12,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,
               cursor:closed?"not-allowed":"pointer",transition:"all .2s",background:bg,border:bd,padding:"4px 2px",opacity:closed?.45:1,
             }} onMouseEnter={e=>{if(!closed){e.currentTarget.style.transform="scale(1.04)"}}} onMouseLeave={e=>{if(!closed){e.currentTarget.style.transform="none"}}}>
@@ -620,7 +581,7 @@ function AdminView({config,updateConfig,employees,updateEmployees,leaves,updateL
   const[lM,sM]=useState(String(config.maxPerMonth));
   const[lHM,sHM]=useState(String(config.maxHolidayMonth));
 
-  const saveCfg=()=>{updateConfig({maxWeekday:Math.max(1,parseInt(lW)||1),maxWeekend:Math.max(1,parseInt(lWe)||1),maxHoliday:Math.max(1,parseInt(lH)||1),maxPerMonth:Math.max(1,parseInt(lM)||1),maxHolidayMonth:Math.max(1,parseInt(lHM)||1)});notify("限制已更新","success")};
+  const saveCfg=()=>{updateConfig({...config,maxWeekday:Math.max(1,parseInt(lW)||1),maxWeekend:Math.max(1,parseInt(lWe)||1),maxHoliday:Math.max(1,parseInt(lH)||1),maxPerMonth:Math.max(1,parseInt(lM)||1),maxHolidayMonth:Math.max(1,parseInt(lHM)||1)});notify("限制已更新","success")};
   const addEmp=()=>{const n=newEmp.trim();if(!n)return;if(employees.includes(n))return notify("同仁已存在","error");updateEmployees([...employees,n]);setNewEmp("");notify(`已新增 ${n}`,"success")};
   const rmEmp=name=>{updateEmployees(employees.filter(e=>e!==name));const nl={...leaves};delete nl[name];updateLeaves(nl);notify(`已移除 ${name}`,"warn")};
   const addPt=()=>{const n=newPtEmp.trim();if(!n)return;if(ptEmp.includes(n))return notify("兼職同仁已存在","error");updatePtEmp([...ptEmp,n]);setNewPtEmp("");notify(`已新增兼職 ${n}`,"success")};
@@ -631,6 +592,22 @@ function AdminView({config,updateConfig,employees,updateEmployees,leaves,updateL
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:24}}>
+      {/* 排休開放開關 */}
+      {(()=>{
+        const mk=`${year}-${month}`;
+        const isOpen=(config.openMonths||{})[mk]===true;
+        return <div style={{background:isOpen?"rgba(74,222,128,.08)":C.surface,borderRadius:20,border:`1px solid ${isOpen?"rgba(74,222,128,.35)":C.border}`,padding:24,transition:"all .25s"}}>
+          <h3 style={{fontSize:16,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:8}}>🔓 {year}年{month+1}月 排休開放</h3>
+          <p style={{fontSize:13,color:C.textSub,marginBottom:16}}>關閉時員工無法填寫，避免提前畫休。開放後才能排休/排班。</p>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <button onClick={()=>{const om={...(config.openMonths||{})};om[mk]=!isOpen;updateConfig({...config,openMonths:om});notify(isOpen?`已關閉 ${month+1}月 排休`:`已開放 ${month+1}月 排休`,isOpen?"warn":"success")}} style={{width:56,height:30,borderRadius:15,border:"none",background:isOpen?C.success:C.border,cursor:"pointer",position:"relative",transition:"background .25s",flexShrink:0}}>
+              <div style={{width:24,height:24,borderRadius:12,background:"#fff",position:"absolute",top:3,left:isOpen?29:3,transition:"left .25s",boxShadow:"0 1px 3px rgba(0,0,0,.3)"}}/>
+            </button>
+            <span style={{fontSize:15,fontWeight:700,color:isOpen?C.success:C.textSub}}>{isOpen?"✓ 已開放填寫":"🔒 尚未開放（員工僅能查看）"}</span>
+          </div>
+        </div>;
+      })()}
+
       <div style={{background:C.surface,borderRadius:20,border:`1px solid ${C.border}`,padding:24}}>
         <h3 style={{fontSize:16,fontWeight:700,marginBottom:20,display:"flex",alignItems:"center",gap:8}}>⚙️ 排休限制設定</h3>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:16,maxWidth:700}}>
