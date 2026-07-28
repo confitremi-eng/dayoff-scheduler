@@ -5,7 +5,7 @@ import { SCHEDULE_END, isWeekend, getHolidayName, isHoliday, dayType, DAY_LABELS
 const DB = { CONFIG: "config", LEAVES: "leaves", EMPLOYEES: "employees", SPECIAL: "specialIntent", CLOSED: "closedDays", BLOCKED: "blockedDays", SKIP: "skipLeave", PT_EMP: "partTimeEmployees", PT_SLOTS: "partTimeSlots" };
 
 const DEF_PT_EMP = ["陳小瑜", "林阿明", "吳小花"];
-const SLOT_LABELS = { allday: "全天", noon: "中午", evening: "晚上" };
+const SLOT_LABELS = { allday: "整天都可", noon: "早上", evening: "晚上" };
 
 // ── helpers ──────────────────────────────────────────────────────────
 // ── generate month options: 當月起至 2026年12月 ──────────────────────
@@ -176,7 +176,7 @@ export default function App(){
   };
 
   const exportPtCSV=()=>{
-    const slotName=s=>s==="allday"?"全天":s==="noon"?"中午":s==="evening"?"晚上":s;
+    const slotName=s=>s==="allday"?"整天都可":s==="noon"?"早上":s==="evening"?"晚上":s;
     let csv="\uFEFF日期,星期,類型,"+ptEmp.join(",")+"\n";
     for(let d=1;d<=days;d++){
       const ds=fmt(new Date(year,month,d)),wd=weekdayStr(year,month,d),t=dayType(year,month,d),hName=getHolidayName(year,month,d),closed=closedDays.includes(ds);
@@ -399,9 +399,9 @@ function PartTimeCalendarView({year,month,days,ptEmp,ptSlots,updatePtSlots,curre
     if(cur.includes(slot)){
       next=cur.filter(s=>s!==slot);
     }else if(slot==="allday"){
-      next=["allday"]; // 選全天時清除中午/晚上
+      next=["allday"]; // 選整天都可時清除早上/晚上
     }else{
-      next=[...cur.filter(s=>s!=="allday"),slot]; // 選中午/晚上時清除全天
+      next=[...cur.filter(s=>s!=="allday"),slot]; // 選早上/晚上時清除整天都可
     }
     const newUserSlots={...userSlots};
     if(next.length===0) delete newUserSlots[dateStr];
@@ -433,7 +433,7 @@ function PartTimeCalendarView({year,month,days,ptEmp,ptSlots,updatePtSlots,curre
       <div style={{background:C.surface,borderRadius:20,border:`1px solid ${C.border}`,padding:20}}>
         <div style={{marginBottom:12}}>
           <span style={{fontSize:18,fontWeight:700,color:C.text}}>{year}年{month+1}月 兼職可排班時段</span>
-          <p style={{fontSize:12,color:C.textSub,marginTop:4}}>點擊日期即可選擇可排班時段（全天／中午／晚上）</p>
+          <p style={{fontSize:12,color:C.textSub,marginTop:4}}>點擊日期即可選擇可排班時段（整天都可／早上／晚上）</p>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:8}}>
           {["日","一","二","三","四","五","六"].map((w,i)=><div key={w} style={{textAlign:"center",fontSize:13,fontWeight:600,color:i===0||i===6?C.gold+"cc":C.textDim,padding:"6px 0"}}>{w}</div>)}
@@ -453,14 +453,14 @@ function PartTimeCalendarView({year,month,days,ptEmp,ptSlots,updatePtSlots,curre
               <span style={{fontSize:16,fontWeight:hasSlot?700:500,fontFamily:"'JetBrains Mono',monospace",color:closed?C.textDim:hasSlot?C.accent:C.text,textDecoration:closed?"line-through":"none"}}>{day}</span>
               {hasSlot&&!closed&&<div style={{display:"flex",gap:2,marginTop:1}}>
                 {slots.includes("allday")&&<span style={{fontSize:8,fontWeight:700,padding:"1px 4px",borderRadius:3,background:"#4ADE80",color:"#000"}}>全</span>}
-                {slots.includes("noon")&&<span style={{fontSize:8,fontWeight:700,padding:"1px 4px",borderRadius:3,background:"#FBBF24",color:"#000"}}>中</span>}
+                {slots.includes("noon")&&<span style={{fontSize:8,fontWeight:700,padding:"1px 4px",borderRadius:3,background:"#FBBF24",color:"#000"}}>早</span>}
                 {slots.includes("evening")&&<span style={{fontSize:8,fontWeight:700,padding:"1px 4px",borderRadius:3,background:"#818CF8",color:"#fff"}}>晚</span>}
               </div>}
             </div>
           })}
         </div>
         <div style={{display:"flex",flexWrap:"wrap",gap:16,marginTop:20,padding:"14px 0 0",borderTop:`1px solid ${C.border}`}}>
-          {[{color:C.accent,label:"已填時段"},{color:"#4ADE80",label:"全天"},{color:"#FBBF24",label:"中午"},{color:"#818CF8",label:"晚上"},{color:C.danger,label:"公休日"}].map(l=><div key={l.label} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.textSub}}><div style={{width:10,height:10,borderRadius:4,background:l.color}}/>{l.label}</div>)}
+          {[{color:C.accent,label:"已填時段"},{color:"#4ADE80",label:"整天都可"},{color:"#FBBF24",label:"早上"},{color:"#818CF8",label:"晚上"},{color:C.danger,label:"公休日"}].map(l=><div key={l.label} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.textSub}}><div style={{width:10,height:10,borderRadius:4,background:l.color}}/>{l.label}</div>)}
         </div>
       </div>
 
@@ -473,7 +473,7 @@ function PartTimeCalendarView({year,month,days,ptEmp,ptSlots,updatePtSlots,curre
             <h3 style={{fontSize:18,fontWeight:700,marginBottom:4}}>📅 {month+1}/{editingDay}（{weekdayStr(year,month,editingDay)}）</h3>
             <p style={{fontSize:13,color:C.textSub,marginBottom:18}}>選擇 <strong style={{color:C.accent}}>{currentUser}</strong> 的可排班時段</p>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
-              {[{key:"allday",label:"☀️ 全天",color:"#4ADE80"},{key:"noon",label:"🌞 中午",color:"#FBBF24"},{key:"evening",label:"🌙 晚上",color:"#818CF8"}].map(s=>{
+              {[{key:"allday",label:"🍕 整天都可",color:"#4ADE80"},{key:"noon",label:"☀️ 早上",color:"#FBBF24"},{key:"evening",label:"🌙 晚上",color:"#818CF8"}].map(s=>{
                 const active=slots.includes(s.key);
                 return <button key={s.key} onClick={()=>toggleSlot(ds,s.key)} style={{
                   padding:"16px 20px",borderRadius:12,border:`2px solid ${active?s.color:C.border}`,
@@ -534,7 +534,7 @@ function RecordsView({employees,leaves,year,month,days,config,specialIntent,ptEm
                 return <span key={d} style={{padding:"3px 10px",borderRadius:8,background:`${C.accentLight}18`,color:C.accentLight,fontSize:12,fontWeight:500,fontFamily:"'JetBrains Mono',monospace",display:"inline-flex",gap:4,alignItems:"center"}}>
                   {dt.getDate()}日
                   {sArr.includes("allday")&&<span style={{fontSize:9,padding:"1px 4px",borderRadius:3,background:"#4ADE80",color:"#000",fontWeight:700}}>全</span>}
-                  {sArr.includes("noon")&&<span style={{fontSize:9,padding:"1px 4px",borderRadius:3,background:"#FBBF24",color:"#000",fontWeight:700}}>中</span>}
+                  {sArr.includes("noon")&&<span style={{fontSize:9,padding:"1px 4px",borderRadius:3,background:"#FBBF24",color:"#000",fontWeight:700}}>早</span>}
                   {sArr.includes("evening")&&<span style={{fontSize:9,padding:"1px 4px",borderRadius:3,background:"#818CF8",color:"#fff",fontWeight:700}}>晚</span>}
                 </span>
               })}
