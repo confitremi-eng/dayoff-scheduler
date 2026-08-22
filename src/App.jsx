@@ -161,37 +161,40 @@ export default function App(){
     notify("排休成功！","success");
   };
 
-  const exportCSV=()=>{
-    let csv="\uFEFF日期,星期,類型,上限,"+employees.join(",")+",合計\n";
-    for(let d=1;d<=days;d++){
-      const ds=fmt(new Date(year,month,d)),wd=weekdayStr(year,month,d),t=dayType(year,month,d),lim=getDayLimit(config,year,month,d),hName=getHolidayName(year,month,d),closed=closedDays.includes(ds),blocked=blockedDays.includes(ds);
-      csv+=`${ds},${wd},${closed?"公休":blocked?"禁休":hName||DAY_LABELS[t]},${closed||blocked?0:lim},`;let tot=0;
-      employees.forEach(emp=>{const has=(leaves[emp]||[]).includes(ds);csv+=(has?"休":"")+",";if(has)tot++});
-      csv+=tot+"\n";
-    }
+  // CSV 欄位跳脫（含逗號/引號/換行時加引號）
+  const csvEsc=v=>{const t=String(v??"");return /[",\n]/.test(t)?`"${t.replace(/"/g,'""')}"`:t;};
+  const csvRow=(head,cells)=>[head,...cells].map(csvEsc).join(",");
+  const downloadCsv=(out,name)=>{
+    const csv="\uFEFF"+out.join("\n")+"\n";
     const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
-    const a=document.createElement("a");a.href=url;
-    a.download=`排休表_${year}年${month+1}月.csv`;a.click();
-    URL.revokeObjectURL(url);notify("已匯出 CSV","success");
+    const a=document.createElement("a");a.href=url;a.download=name;a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportCSV=()=>{
+    // 轉置：日期橫排（每天一欄）、同仁豎排（每人一列）
+    const cols=[];for(let d=1;d<=days;d++){const ds=fmt(new Date(year,month,d));cols.push({day:d,ds,wd:weekdayStr(year,month,d),t:dayType(year,month,d),lim:getDayLimit(config,year,month,d),hName:getHolidayName(year,month,d),closed:closedDays.includes(ds),blocked:blockedDays.includes(ds)});}
+    const out=[];
+    out.push(csvRow("日期",cols.map(c=>c.day)));
+    out.push(csvRow("星期",cols.map(c=>c.wd)));
+    out.push(csvRow("類型",cols.map(c=>c.closed?"公休":c.blocked?"禁休":c.hName||DAY_LABELS[c.t])));
+    out.push(csvRow("上限",cols.map(c=>c.closed||c.blocked?0:c.lim)));
+    const tot=cols.map(()=>0);
+    employees.forEach(emp=>{out.push(csvRow(emp,cols.map((c,i)=>{const has=(leaves[emp]||[]).includes(c.ds);if(has)tot[i]++;return has?"必休":"";})));});
+    out.push(csvRow("合計",tot));
+    downloadCsv(out,`排休表_${year}年${month+1}月.csv`);notify("已匯出 CSV","success");
   };
 
   const exportPtCSV=()=>{
-    const slotName=s=>s==="allday"?"整天都可":s==="noon"?"早上":s==="evening"?"晚上":s;
-    let csv="\uFEFF日期,星期,類型,"+ptEmp.join(",")+"\n";
-    for(let d=1;d<=days;d++){
-      const ds=fmt(new Date(year,month,d)),wd=weekdayStr(year,month,d),t=dayType(year,month,d),hName=getHolidayName(year,month,d),closed=closedDays.includes(ds);
-      csv+=`${ds},${wd},${closed?"公休":hName||DAY_LABELS[t]},`;
-      ptEmp.forEach(emp=>{
-        const slots=(ptSlots[emp]||{})[ds]||[];
-        const txt=slots.length>0?slots.map(slotName).join("/"):"";
-        csv+=`${txt},`;
-      });
-      csv=csv.slice(0,-1)+"\n";
-    }
-    const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
-    const a=document.createElement("a");a.href=url;
-    a.download=`兼職排班表_${year}年${month+1}月.csv`;a.click();
-    URL.revokeObjectURL(url);notify("已匯出兼職排班表","success");
+    // 匯出縮寫：早上→L、晚上→D、整天都可→ALL；轉置：日期橫排、同仁豎排
+    const slotName=s=>s==="allday"?"ALL":s==="noon"?"L":s==="evening"?"D":s;
+    const cols=[];for(let d=1;d<=days;d++){const ds=fmt(new Date(year,month,d));cols.push({day:d,ds,wd:weekdayStr(year,month,d),t:dayType(year,month,d),hName:getHolidayName(year,month,d),closed:closedDays.includes(ds)});}
+    const out=[];
+    out.push(csvRow("日期",cols.map(c=>c.day)));
+    out.push(csvRow("星期",cols.map(c=>c.wd)));
+    out.push(csvRow("類型",cols.map(c=>c.closed?"公休":c.hName||DAY_LABELS[c.t])));
+    ptEmp.forEach(emp=>{out.push(csvRow(emp,cols.map(c=>{const slots=(ptSlots[emp]||{})[c.ds]||[];return slots.length>0?slots.map(slotName).join("/"):"";})));});
+    downloadCsv(out,`兼職排班表_${year}年${month+1}月.csv`);notify("已匯出兼職排班表","success");
   };
 
   if(!ready)return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:C.bg}}><div style={{color:C.textSub,fontSize:16}}>載入中...</div></div>;
